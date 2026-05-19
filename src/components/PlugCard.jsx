@@ -28,6 +28,45 @@ const PlugCard = ({ plug, onToggle }) => {
               </span>
             )}
           </div>
+          {isOn && (
+            <div className="mt-3 flex items-center space-x-2">
+              <span className="text-xs uppercase tracking-wider font-semibold text-textMuted">Classified Load:</span>
+              <span className={`text-xs px-2.5 py-0.5 rounded-full font-mono font-bold tracking-wider border uppercase flex items-center ${
+                plug.connectedDevice === 'Phone' 
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 glow-box-sm animate-pulse'
+                  : plug.connectedDevice === 'Fan'
+                  ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30'
+                  : plug.connectedDevice === 'Laptop'
+                  ? 'bg-sky-500/10 text-sky-400 border-sky-500/30'
+                  : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+              }`}>
+                {plug.connectedDevice === 'Phone' && (
+                  <span className="flex items-center space-x-1.5">
+                    <span>📱</span>
+                    <span>Phone</span>
+                  </span>
+                )}
+                {plug.connectedDevice === 'Fan' && (
+                  <span className="flex items-center space-x-1.5">
+                    <span className="inline-block origin-center animate-[spin_4s_linear_infinite]">🌀</span>
+                    <span>Fan</span>
+                  </span>
+                )}
+                {plug.connectedDevice === 'Laptop' && (
+                  <span className="flex items-center space-x-1.5">
+                    <span>💻</span>
+                    <span>Laptop</span>
+                  </span>
+                )}
+                {(plug.connectedDevice === 'Idle' || !plug.connectedDevice) && (
+                  <span className="flex items-center space-x-1.5">
+                    <span>💤</span>
+                    <span>Idle / No Load</span>
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Custom Toggle Switch */}
