@@ -1,21 +1,31 @@
-import React from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, ReferenceLine } from 'recharts';
+import { IDLE_THRESHOLD_W, niceCeiling, cleanTick } from '../lib/chartScale';
 
 const PowerChart = ({ data }) => {
+  const peak = data.reduce(
+    (max, point) => Math.max(max, Number.isFinite(point.totalPower) ? point.totalPower : 0),
+    0
+  );
+
+  // Scale to the measured load. The floor keeps the idle threshold off the axis
+  // when the house is quiet, instead of flattening the whole series.
+  const maxY = niceCeiling(peak, IDLE_THRESHOLD_W * 8);
+  const ticks = [0, maxY / 2, maxY];
+
   return (
-    <div className="bg-cardBg rounded-2xl p-6 border border-borderSubtle shadow-lg glass-card">
-      <div className="flex justify-between items-center mb-6">
+    <div className="bg-cardBg rounded-2xl p-6 shadow-lg glass-card">
+      <div className="flex flex-wrap justify-between items-center gap-y-2 mb-6">
         <div className="flex items-center space-x-2">
           <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></div>
           <h3 className="text-textMain font-semibold tracking-wider text-sm">REAL-TIME POWER (W)</h3>
         </div>
 
-        <span className="text-xs font-mono text-textMuted tracking-wider">ROLLING 60S BUFFER</span>
+        <span className="text-xs font-mono text-textMuted tracking-wider hidden sm:inline">ROLLING 60S BUFFER</span>
       </div>
 
       <div className="h-64 w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+          <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="colorPower" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#ef4444" stopOpacity={0.4}/>
@@ -32,18 +42,27 @@ const PowerChart = ({ data }) => {
               axisLine={{ stroke: 'var(--border-subtle)' }}
             />
             <YAxis 
-              stroke="#ef4444" 
+              stroke="var(--text-muted)" 
               fontSize={11} 
               tickMargin={10}
               tickLine={false}
               axisLine={false}
-              domain={[0, 1500]}
-              ticks={[0, 500, 1000, 1500]}
+              width={44}
+              domain={[0, maxY]}
+              ticks={ticks}
+              tickFormatter={cleanTick(0)}
             />
             <Tooltip 
               contentStyle={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-main)' }}
               itemStyle={{ color: '#ef4444' }}
               labelStyle={{ color: 'var(--text-muted)' }}
+            />
+            <ReferenceLine
+              y={IDLE_THRESHOLD_W}
+              stroke="var(--text-muted)"
+              strokeDasharray="4 4"
+              strokeOpacity={0.6}
+              label={{ value: `${IDLE_THRESHOLD_W} W idle threshold`, position: 'insideTopRight', fill: 'var(--text-muted)', fontSize: 10 }}
             />
             <Area 
               type="monotone" 

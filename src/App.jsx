@@ -56,9 +56,15 @@ function App() {
       setLastUpdated(now.toLocaleTimeString([], { hour12: false }));
       
       setDataHistory(prev => {
-        const totalPower = response.plugs.reduce((sum, p) => sum + p.realPower, 0);
-        const avgVrms = response.plugs.reduce((sum, p) => sum + p.vrms, 0) / (response.plugs.length || 1);
-        const totalIrms = response.plugs.reduce((sum, p) => sum + p.irms, 0);
+        const totalPower = response.plugs.reduce((sum, p) => sum + (Number.isFinite(p.realPower) ? p.realPower : 0), 0);
+        // Average only over nodes that are actually reporting a voltage. An
+        // unpowered node reads 0 V, and including it drags the mean into a sag
+        // that no appliance is experiencing.
+        const reportingNodes = response.plugs.filter(p => Number.isFinite(p.vrms) && p.vrms > 0);
+        const avgVrms = reportingNodes.length
+          ? reportingNodes.reduce((sum, p) => sum + p.vrms, 0) / reportingNodes.length
+          : 0;
+        const totalIrms = response.plugs.reduce((sum, p) => sum + (Number.isFinite(p.irms) ? p.irms : 0), 0);
         const newDataPoint = {
           time: now.toLocaleTimeString([], { hour12: false }),
           totalPower,

@@ -1,15 +1,33 @@
-import React from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
+import { niceCeiling, roundDownTo, roundUpTo } from '../lib/chartScale';
 
 const VoltageCurrentChart = ({ data }) => {
+  const voltages = data.map((point) => point.avgVrms).filter((value) => Number.isFinite(value) && value > 0);
+  const currents = data.map((point) => point.totalIrms).filter((value) => Number.isFinite(value) && value > 0);
+
+  // Mains voltage moves inside a narrow band. Show that band so the movement is
+  // readable, and fall back to a 0-240 window when nothing is energised rather
+  // than clipping a zero reading off the bottom of a fixed axis.
+  const voltagePeak = voltages.length ? Math.max(...voltages) : 240;
+  const voltageMin = voltages.length ? roundDownTo(Math.min(...voltages), 20) : 0;
+  const voltageMax = Math.max(roundUpTo(voltagePeak, 20), 240);
+  const voltageTicks = [voltageMin, (voltageMin + voltageMax) / 2, voltageMax];
+
+  // Current is dominated by whatever is smallest in the house; scale to it with
+  // a floor so a phone charger is still a visible trace.
+  const currentMax = niceCeiling(currents.length ? Math.max(...currents) : 0, 0.5);
+  const currentTicks = [0, currentMax / 2, currentMax];
+
   return (
-    <div className="bg-cardBg rounded-2xl p-6 border border-borderSubtle shadow-lg mt-6 glass-card">
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center space-x-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
-          <h3 className="text-textMain font-semibold tracking-wider text-sm">VOLTAGE (VRMS) & CURRENT (IRMS)</h3>
-          
-          <div className="flex items-center ml-4 space-x-4 text-xs font-medium">
+    <div className="bg-cardBg rounded-2xl p-6 shadow-lg glass-card">
+      <div className="flex flex-wrap justify-between items-center gap-y-2 mb-6">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex items-center space-x-2">
+            <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
+            <h3 className="text-textMain font-semibold tracking-wider text-sm">VOLTAGE (VRMS) &amp; CURRENT (IRMS)</h3>
+          </div>
+
+          <div className="flex items-center gap-x-4 text-xs font-medium">
             <div className="flex items-center space-x-1">
               <div className="w-4 h-0.5 bg-blue-400"></div>
               <span className="text-textMuted">Voltage (Vrms)</span>
@@ -21,12 +39,12 @@ const VoltageCurrentChart = ({ data }) => {
           </div>
         </div>
 
-        <span className="text-xs font-mono text-textMuted tracking-wider">ROLLING 60S BUFFER</span>
+        <span className="text-xs font-mono text-textMuted tracking-wider hidden sm:inline">ROLLING 60S BUFFER</span>
       </div>
 
       <div className="h-48 w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+          <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" vertical={true} horizontal={false} opacity={0.3} />
             <XAxis 
               dataKey="time" 
@@ -43,9 +61,10 @@ const VoltageCurrentChart = ({ data }) => {
               tickMargin={10}
               tickLine={false}
               axisLine={false}
-              domain={[180, 240]}
-              ticks={[180, 200, 220, 240]}
-              tickFormatter={(value) => `${value} V`}
+              width={48}
+              domain={[voltageMin, voltageMax]}
+              ticks={voltageTicks}
+              tickFormatter={(value) => `${Number(value.toFixed(0))} V`}
             />
             <YAxis 
               yAxisId="right"
@@ -55,9 +74,10 @@ const VoltageCurrentChart = ({ data }) => {
               tickMargin={10}
               tickLine={false}
               axisLine={false}
-              domain={[0, 2]}
-              ticks={[0, 1.0, 2.0]}
-              tickFormatter={(value) => `${value.toFixed(1)} A`}
+              width={44}
+              domain={[0, currentMax]}
+              ticks={currentTicks}
+              tickFormatter={(value) => value.toFixed(1)}
             />
             <Tooltip 
               contentStyle={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-main)' }}
