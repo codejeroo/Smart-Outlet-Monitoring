@@ -13,6 +13,12 @@ class Plug(Base):
     realPower = Column(Float, default=0.0)
     idleDetection = Column(Boolean, default=False)
     connectedDevice = Column(String(50), default="Idle")
+    # Last telemetry frame received from the physical node. Null means the node
+    # has never reported, so the row's readings are not evidence of anything.
+    lastSeen = Column(DateTime, nullable=True)
+    # Result of the last relay command attempt. Null = never attempted,
+    # True = the ESP32 acknowledged, False = the command was not delivered.
+    relayReachable = Column(Boolean, nullable=True)
 
 class SystemStat(Base):
     __tablename__ = "system_stats"

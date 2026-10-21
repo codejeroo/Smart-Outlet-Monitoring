@@ -15,6 +15,12 @@ class PlugBase(BaseModel):
 
 class Plug(PlugBase):
     id: int
+    # ISO-8601 UTC string, or null when the node has never reported telemetry.
+    # Declared as str so the trailing "Z" survives serialization (same convention
+    # as the /api/logs payload) instead of being re-rendered as a naive datetime.
+    lastSeen: Optional[str] = None
+    # None = no relay command attempted yet, True = acknowledged, False = not delivered.
+    relayReachable: Optional[bool] = None
 
     class Config:
         from_attributes = True

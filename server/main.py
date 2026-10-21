@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+import datetime
 import os
 import models
 import schemas
@@ -30,17 +31,23 @@ except Exception as e:
     print(f"[WARNING] Failed to load Random Forest classifier: {e}. Using rule-based fallback.")
 
 def init_db(db: Session):
-    # Ensure database schema is migrated (add connectedDevice column if missing in MySQL/MariaDB)
-    try:
-        db.execute(text("SELECT connectedDevice FROM plugs LIMIT 1"))
-    except Exception:
+    # Ensure database schema is migrated for tables created by earlier versions.
+    migrations = {
+        "connectedDevice": "VARCHAR(50) DEFAULT 'Idle'",
+        "lastSeen": "DATETIME NULL",
+        "relayReachable": "BOOLEAN NULL",
+    }
+    for column, ddl in migrations.items():
         try:
-            db.execute(text("ALTER TABLE plugs ADD COLUMN connectedDevice VARCHAR(50) DEFAULT 'Idle'"))
-            db.commit()
-            print("[SUCCESS] Database migrated: Added 'connectedDevice' column to 'plugs' table.")
-        except Exception as migration_error:
-            db.rollback()
-            print(f"[ERROR] Failed to automatically migrate database: {migration_error}")
+            db.execute(text(f"SELECT {column} FROM plugs LIMIT 1"))
+        except Exception:
+            try:
+                db.execute(text(f"ALTER TABLE plugs ADD COLUMN {column} {ddl}"))
+                db.commit()
+                print(f"[SUCCESS] Database migrated: added '{column}' column to 'plugs' table.")
+            except Exception as migration_error:
+                db.rollback()
+                print(f"[ERROR] Failed to add '{column}' to 'plugs': {migration_error}")
 
     # Seed initial data if empty
     if db.query(models.Plug).count() == 0:
@@ -78,6 +85,23 @@ def on_startup():
     db = next(get_db())
     init_db(db)
 
+def _plug_payload(plug: models.Plug):
+    """Serialize a plug including the freshness signals the UI needs to avoid
+    presenting stored readings as if they were live."""
+    return {
+        "id": plug.id,
+        "name": plug.name,
+        "status": plug.status,
+        "vrms": plug.vrms,
+        "irms": plug.irms,
+        "realPower": plug.realPower,
+        "idleDetection": plug.idleDetection,
+        "connectedDevice": plug.connectedDevice,
+        "lastSeen": (plug.lastSeen.isoformat() + "Z") if plug.lastSeen else None,
+        "relayReachable": plug.relayReachable,
+    }
+
+
 @app.get("/api/plugs", response_model=schemas.PlugsResponse)
 def read_plugs(db: Session = Depends(get_db)):
     plugs = db.query(models.Plug).all()
@@ -87,7 +111,7 @@ def read_plugs(db: Session = Depends(get_db)):
     monthly = db.query(models.SystemStat).filter(models.SystemStat.key == "monthlyConsumption").first()
     
     return {
-        "plugs": plugs, 
+        "plugs": [_plug_payload(plug) for plug in plugs],
         "totalDailyConsumption": daily.value if daily else 0.0,
         "totalWeeklyConsumption": weekly.value if weekly else 0.0,
         "totalMonthlyConsumption": monthly.value if monthly else 0.0
@@ -98,16 +122,21 @@ def control_plug(plug_id: int, status: str, db: Session = Depends(get_db)):
     plug = db.query(models.Plug).filter(models.Plug.id == plug_id).first()
     if not plug:
         raise HTTPException(status_code=404, detail="Plug not found")
-    
+
+    if status not in ("on", "off"):
+        raise HTTPException(status_code=400, detail="status must be 'on' or 'off'")
+
     plug.status = status
     if status == 'on':
         # Don't inject fake 330W data here; wait for ESP32 to send real telemetry!
         # Just set idleDetection to False so the UI knows it's turning on.
         plug.idleDetection = False
     else:
+        # A relay that is off measures nothing: clear the whole reading so the card
+        # cannot pair a live-looking voltage with a zeroed current.
+        plug.vrms = 0.0
         plug.irms = 0.0
         plug.realPower = 0.0
-        plug.powerFactor = 0.0
         plug.connectedDevice = "Idle"
         
     db.commit()
@@ -130,8 +159,10 @@ def control_plug(plug_id: int, status: str, db: Session = Depends(get_db)):
             
     # Clean up quotes/spaces
     plug_ip = plug_ip.strip("'\" ")
-    
+
     state_val = (status == "on")
+    relay_reachable = False
+    relay_detail = "no response from relay"
     try:
         url = f"http://{plug_ip}/relay"
         print(f"[RELAY CONTROL] Sending state={state_val} to {url}")
@@ -146,12 +177,27 @@ def control_plug(plug_id: int, status: str, db: Session = Depends(get_db)):
         # Timeout of 2.0 seconds to prevent blocking FastAPI thread if ESP32 goes offline
         with urllib.request.urlopen(req, timeout=2.0) as res:
             res_body = res.read().decode("utf-8")
+            relay_reachable = True
             print(f"[RELAY CONTROL SUCCESS] Response from {plug_ip}: {res.status} - {res_body}")
     except Exception as e:
+        relay_detail = str(e)
         print(f"[RELAY CONTROL WARNING] Failed to connect to physical relay at {plug_ip}: {e}")
     # ----------------------------------------------------------------
-        
-    return {"success": True, "message": f"Plug {plug_id} turned {status}"}
+
+    # Record whether the physical command was actually delivered, so the UI can
+    # distinguish "commanded" from "confirmed" instead of assuming success.
+    plug.relayReachable = relay_reachable
+    db.commit()
+
+    return {
+        "success": True,
+        "relayReachable": relay_reachable,
+        "message": (
+            f"Plug {plug_id} turned {status}"
+            if relay_reachable
+            else f"Plug {plug_id} recorded as {status}, but the relay at {plug_ip} did not acknowledge ({relay_detail})"
+        ),
+    }
 
 @app.post("/api/plugs/{plug_id}/data")
 def update_plug_data(plug_id: int, data: schemas.PlugDataUpdate, db: Session = Depends(get_db)):
@@ -163,6 +209,8 @@ def update_plug_data(plug_id: int, data: schemas.PlugDataUpdate, db: Session = D
     plug.irms = data.irms
     plug.realPower = data.realPower
     plug.idleDetection = data.idleDetection
+    # Freshness stamp: the UI uses this to tell a live reading from a stored one.
+    plug.lastSeen = datetime.datetime.utcnow()
     
     # Perform local machine learning classification
     if predictor:
@@ -206,7 +254,6 @@ def update_plug_data(plug_id: int, data: schemas.PlugDataUpdate, db: Session = D
             
     # Calculate energy consumption based on elapsed time since the last logged telemetry entry
     # (Default: assume 5.0s heartbeat if no previous logs exist or if offline time is too long)
-    import datetime
     time_diff_seconds = 5.0
     last_log = db.query(models.TelemetryLog).filter(models.TelemetryLog.plug_id == plug_id).order_by(models.TelemetryLog.timestamp.desc()).first()
     if last_log:
