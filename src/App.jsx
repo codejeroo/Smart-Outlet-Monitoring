@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import PlugCard from './components/PlugCard';
 import { getPlugs, controlPlug, getTelemetryLogs, clearTelemetryLogs } from './services/api';
 import logo from './assets/logo.png';
 import PowerChart from './components/PowerChart';
 import VoltageCurrentChart from './components/VoltageCurrentChart';
+import { plugLiveness, num, LIVE_WINDOW_MS } from './lib/telemetry';
 
 function App() {
   const [plugs, setPlugs] = useState([]);
@@ -15,6 +16,12 @@ function App() {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [dataHistory, setDataHistory] = useState([]);
   const [lastUpdated, setLastUpdated] = useState('');
+
+  // Relay commands are requests until the hardware confirms them, so a command
+  // in flight and a command that failed both have to be visible.
+  const [pendingControl, setPendingControl] = useState({});
+  const [controlErrors, setControlErrors] = useState({});
+  const [now, setNow] = useState(() => Date.now());
   
   // Drawer States
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -28,6 +35,13 @@ function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [isDarkMode]);
+
+  // A ticking clock keeps staleness honest even when polling stops. Without it,
+  // a dead server would freeze every "last seen" age at whatever it was.
+  useEffect(() => {
+    const clockId = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(clockId);
+  }, []);
 
   const fetchPlugs = async () => {
     try {
@@ -109,21 +123,39 @@ function App() {
   };
 
   const handleToggle = async (id, status) => {
+    setPendingControl(prev => ({ ...prev, [id]: status }));
+    setControlErrors(prev => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+
     try {
-      // Optimistic update
-      setPlugs(currentPlugs =>
-        currentPlugs.map(plug =>
-          plug.id === id ? { ...plug, status, realPower: status === 'on' ? plug.realPower : 0 } : plug
-        )
-      );
+      const result = await controlPlug(id, status);
 
-      await controlPlug(id, status);
-
-      // Refresh to ensure sync
-      fetchPlugs();
+      // The server records the command either way. Only the relay's own
+      // acknowledgement tells us the appliance actually changed state.
+      if (result && result.relayReachable === false) {
+        setControlErrors(prev => ({
+          ...prev,
+          [id]: result.message || 'The relay did not acknowledge this command.',
+        }));
+      }
     } catch (err) {
       console.error(`Failed to turn ${status} plug ${id}`, err);
-      // Revert optimism by fetching true state
+      setControlErrors(prev => ({
+        ...prev,
+        [id]: 'The server rejected the command. Nothing was switched.',
+      }));
+    } finally {
+      setPendingControl(prev => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      // Re-read the node's real state rather than assuming the command landed.
       fetchPlugs();
     }
   };
@@ -138,8 +170,8 @@ function App() {
 
   // Derived stats
   const totalNodes = plugs.length;
-  const activeNodes = plugs.filter(p => p.status === 'on').length;
-  const totalPower = plugs.reduce((sum, p) => sum + p.realPower, 0);
+  const liveNodes = plugs.filter(p => plugLiveness(p, now).isLive).length;
+  const totalPower = plugs.reduce((sum, p) => sum + (Number.isFinite(p.realPower) ? p.realPower : 0), 0);
   const isConnected = !error;
 
   return (
@@ -200,20 +232,28 @@ function App() {
 
         <main>
           {/* Main Summary Card */}
-          <section className="mb-8 p-6 rounded-2xl glass-card border border-borderSubtle grid grid-cols-1 md:grid-cols-3 gap-6 shadow-lg">
+          <section className="mb-8 p-6 rounded-2xl glass-card grid grid-cols-1 md:grid-cols-3 gap-6 shadow-lg">
             <div className="flex flex-col justify-center">
               <span className="text-textMuted text-xs font-semibold uppercase tracking-wider mb-2">Total Nodes</span>
               <div className="flex items-baseline space-x-2">
                 <span className="text-4xl font-extrabold font-mono text-textMain">{totalNodes}</span>
-                <span className="text-xs text-textMuted font-medium">({activeNodes} active)</span>
+                <span
+                  className="text-xs text-textMuted font-medium"
+                  title={`Nodes that have sent telemetry in the last ${LIVE_WINDOW_MS / 1000} seconds`}
+                >
+                  ({liveNodes} live)
+                </span>
               </div>
             </div>
             <div className="flex flex-col justify-center border-t md:border-t-0 md:border-l border-borderSubtle md:pl-6 pt-4 md:pt-0">
               <span className="text-textMuted text-xs font-semibold uppercase tracking-wider mb-2">Total Real-Time Power</span>
               <div className="flex items-baseline space-x-2">
-                <span className="text-4xl font-extrabold font-mono text-accent glow-text">{totalPower.toFixed(1)}</span>
+                <span className={`text-4xl font-extrabold font-mono ${liveNodes > 0 ? 'text-accent glow-text' : 'text-textMuted'}`}>{num(totalPower, 1)}</span>
                 <span className="text-xs text-textMuted font-medium">W</span>
               </div>
+              {liveNodes === 0 && (
+                <span className="text-xs text-yellow-500 font-medium mt-1">No node reporting — stored reading</span>
+              )}
             </div>
             <div className="flex flex-col border-t md:border-t-0 md:border-l border-borderSubtle md:pl-6 pt-4 md:pt-0 justify-center">
               <span className="text-textMuted text-xs font-semibold uppercase tracking-wider mb-2">Consumption Summary</span>
@@ -249,6 +289,8 @@ function App() {
                 key={plug.id}
                 plug={plug}
                 onToggle={handleToggle}
+                pending={pendingControl[plug.id]}
+                error={controlErrors[plug.id]}
               />
             ))}
           </div>
