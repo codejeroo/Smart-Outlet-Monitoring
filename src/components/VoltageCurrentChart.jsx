@@ -1,11 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 
-const timeRanges = ['Live', '1m', '5m', '15m', '1h'];
-
 const VoltageCurrentChart = ({ data }) => {
-  const [activeRange, setActiveRange] = useState('Live');
-
   return (
     <div className="bg-cardBg rounded-2xl p-6 border border-borderSubtle shadow-lg mt-6 glass-card">
       <div className="flex justify-between items-center mb-6">
@@ -24,22 +20,8 @@ const VoltageCurrentChart = ({ data }) => {
             </div>
           </div>
         </div>
-        
-        <div className="flex space-x-1 bg-background rounded-lg p-1 border border-borderSubtle">
-          {timeRanges.map(range => (
-            <button
-              key={range}
-              onClick={() => setActiveRange(range)}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                activeRange === range 
-                  ? 'bg-primary text-textMain' 
-                  : 'text-textMuted hover:text-textMain hover:bg-primary/50'
-              }`}
-            >
-              {range}
-            </button>
-          ))}
-        </div>
+
+        <span className="text-xs font-mono text-textMuted tracking-wider">ROLLING 60S BUFFER</span>
       </div>
 
       <div className="h-48 w-full">

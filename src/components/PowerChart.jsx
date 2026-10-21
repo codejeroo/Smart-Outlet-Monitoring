@@ -1,11 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 
-const timeRanges = ['Live', '1m', '5m', '15m', '1h'];
-
 const PowerChart = ({ data }) => {
-  const [activeRange, setActiveRange] = useState('Live');
-
   return (
     <div className="bg-cardBg rounded-2xl p-6 border border-borderSubtle shadow-lg glass-card">
       <div className="flex justify-between items-center mb-6">
@@ -13,22 +9,8 @@ const PowerChart = ({ data }) => {
           <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></div>
           <h3 className="text-textMain font-semibold tracking-wider text-sm">REAL-TIME POWER (W)</h3>
         </div>
-        
-        <div className="flex space-x-1 bg-background rounded-lg p-1 border border-borderSubtle">
-          {timeRanges.map(range => (
-            <button
-              key={range}
-              onClick={() => setActiveRange(range)}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                activeRange === range 
-                  ? 'bg-primary text-textMain' 
-                  : 'text-textMuted hover:text-textMain hover:bg-primary/50'
-              }`}
-            >
-              {range}
-            </button>
-          ))}
-        </div>
+
+        <span className="text-xs font-mono text-textMuted tracking-wider">ROLLING 60S BUFFER</span>
       </div>
 
       <div className="h-64 w-full">
