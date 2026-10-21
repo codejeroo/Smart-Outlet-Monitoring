@@ -140,6 +140,7 @@ function App() {
   const totalNodes = plugs.length;
   const activeNodes = plugs.filter(p => p.status === 'on').length;
   const totalPower = plugs.reduce((sum, p) => sum + p.realPower, 0);
+  const isConnected = !error;
 
   return (
     <div className="min-h-screen bg-background text-textMain font-sans p-6 md:p-12 transition-colors duration-300 relative overflow-x-hidden">
@@ -261,16 +262,20 @@ function App() {
         <footer className="mt-16 text-center border-t border-borderSubtle pt-8 text-textMuted text-sm font-mono flex flex-col md:flex-row justify-center items-center md:space-x-8 space-y-2 md:space-y-0">
           <p>Running via Local Area Network (LAN)</p>
           <div className="hidden md:block w-px h-4 bg-borderSubtle"></div>
-          <p className="flex items-center space-x-2">
-            <span className="w-2 h-2 rounded-full bg-accent animate-pulse"></span>
-            <span>Server: Connected</span>
+          <p className="flex items-center space-x-2" role="status" aria-live="polite">
+            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-accent animate-pulse' : 'bg-red-500'}`}></span>
+            <span className={isConnected ? '' : 'text-red-400'}>
+              Server: {isConnected ? 'Connected' : 'Disconnected'}
+            </span>
           </p>
           <div className="hidden md:block w-px h-4 bg-borderSubtle"></div>
           <p className="flex items-center space-x-2">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span>Last Updated: {lastUpdated}</span>
+            <span>
+              {isConnected ? 'Last Updated' : 'Last successful'}: {lastUpdated || 'never'}
+            </span>
           </p>
         </footer>
       </div>
