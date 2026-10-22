@@ -212,8 +212,13 @@ def update_plug_data(plug_id: int, data: schemas.PlugDataUpdate, db: Session = D
     # Freshness stamp: the UI uses this to tell a live reading from a stored one.
     plug.lastSeen = datetime.datetime.utcnow()
     
-    # Perform local machine learning classification
-    if predictor:
+    # Physical guardrails BEFORE inference. The trees were trained on data
+    # that included unpowered rows labeled as device classes; feeding them a
+    # near-zero reading lets a dead socket vote 'fan'. The server's own rule
+    # was already authoritative after inference — it is more honest before it.
+    if data.irms <= 0.005 or data.realPower <= 0.1:
+        plug.connectedDevice = "Idle"
+    elif predictor:
         try:
             pred = predictor.predict(data.vrms, data.irms, data.realPower, data.powerFactor)
             print(f"[INFERENCE] V={data.vrms}, I={data.irms}, P={data.realPower}, PF={data.powerFactor} -> {pred}")
@@ -247,9 +252,11 @@ def update_plug_data(plug_id: int, data: schemas.PlugDataUpdate, db: Session = D
                 plug.connectedDevice = "Phone"
         else:
             plug.connectedDevice = "Idle"
-            
-    # Unconditional physical override: if telemetry indicates zero/negligible current or power, it is Idle
-    if data.irms <= 0.005 or data.realPower <= 0.1:
+
+    # PF=0 on an energized socket means the PZEM did not resolve power factor
+    # (the firmware's NaN guard writes 0.00). That is missing information, not
+    # a measurement — never let the trees treat it as a real feature value.
+    if data.vrms > 0.1 and data.powerFactor <= 0.0 and plug.connectedDevice != "Idle":
         plug.connectedDevice = "Idle"
             
     # Calculate energy consumption based on elapsed time since the last logged telemetry entry
