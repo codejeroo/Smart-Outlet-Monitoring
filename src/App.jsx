@@ -4,7 +4,7 @@ import { getPlugs, controlPlug, getTelemetryLogs, clearTelemetryLogs } from './s
 import logo from './assets/logo.png';
 import PowerChart from './components/PowerChart';
 import VoltageCurrentChart from './components/VoltageCurrentChart';
-import { plugLiveness, num, LIVE_WINDOW_MS } from './lib/telemetry';
+import { plugLiveness, num, parseUtc, LIVE_WINDOW_MS } from './lib/telemetry';
 
 function App() {
   const [plugs, setPlugs] = useState([]);
@@ -27,6 +27,8 @@ function App() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [logs, setLogs] = useState([]);
   const [clearing, setClearing] = useState(false);
+  const [logsError, setLogsError] = useState(null);
+  const [clearError, setClearError] = useState(null);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -77,7 +79,7 @@ function App() {
       });
     } catch (err) {
       console.error("Failed to fetch plugs:", err);
-      setError("Failed to connect to the local server.");
+      setError(`Cannot reach the local server: ${err?.message || 'no response'}.`);
     } finally {
       setLoading(false);
     }
@@ -87,8 +89,11 @@ function App() {
     try {
       const response = await getTelemetryLogs(50);
       setLogs(response.logs || []);
+      setLogsError(null);
     } catch (err) {
       console.error("Failed to fetch logs:", err);
+      // "No logs in database" and "could not read the log" are different facts.
+      setLogsError("Could not read the telemetry log — the server did not answer.");
     }
   };
 
@@ -111,11 +116,22 @@ function App() {
     }
   }, [isDrawerOpen]);
 
+  // The drawer is a modal surface: Escape has to close it, not only the X button.
+  useEffect(() => {
+    if (!isDrawerOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setIsDrawerOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isDrawerOpen]);
+
   const handleClearLogs = async () => {
     if (!window.confirm("Are you sure you want to clear all database telemetry logs and reset all energy consumption metrics to 0.0?")) {
       return;
     }
     setClearing(true);
+    setClearError(null);
     try {
       await clearTelemetryLogs();
       setLogs([]);
@@ -123,6 +139,7 @@ function App() {
       await fetchPlugs();
     } catch (err) {
       console.error("Failed to clear logs:", err);
+      setClearError("Reset failed — the server did not confirm it. Nothing was cleared.");
     } finally {
       setClearing(false);
     }
@@ -179,6 +196,9 @@ function App() {
   const liveNodes = plugs.filter(p => plugLiveness(p, now).isLive).length;
   const totalPower = plugs.reduce((sum, p) => sum + (Number.isFinite(p.realPower) ? p.realPower : 0), 0);
   const isConnected = !error;
+  // Logs carry a numeric node id while the cards carry names; without this map
+  // the two panels cannot be read against each other without memorising it.
+  const plugNames = new Map(plugs.map(p => [p.id, p.name]));
 
   return (
     <div className="min-h-screen bg-background text-textMain font-sans p-6 md:p-12 transition-colors duration-300 relative overflow-x-hidden">
@@ -226,13 +246,20 @@ function App() {
         </header>
 
         {error && (
-          <div className="mb-6 p-4 rounded-lg bg-red-900/20 border border-red-500/30 text-red-400 font-mono text-sm inline-flex items-center">
-            <span className="mr-2">
+          <div role="alert" className="mb-6 p-4 rounded-lg bg-red-900/20 border border-red-500/30 text-red-400 font-mono text-sm flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="mr-2 shrink-0">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
             </span>
-            {error}
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={fetchPlugs}
+              className="ml-auto px-3 py-1 rounded-md border border-red-500/40 hover:bg-red-500/15 text-red-300 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/50"
+            >
+              Retry
+            </button>
           </div>
         )}
 
@@ -254,12 +281,16 @@ function App() {
             <div className="flex flex-col justify-center border-t md:border-t-0 md:border-l border-borderSubtle md:pl-6 pt-4 md:pt-0">
               <span className="text-textMuted text-xs font-semibold uppercase tracking-wider mb-2">Total Real-Time Power</span>
               <div className="flex items-baseline space-x-2">
-                <span className={`text-4xl font-extrabold font-mono ${liveNodes > 0 ? 'text-accent glow-text' : 'text-textMuted'}`}>{num(totalPower, 1)}</span>
+                <span className={`text-4xl font-extrabold font-mono ${isConnected && liveNodes > 0 ? 'text-accent glow-text' : 'text-textMuted'}`}>
+                  {isConnected ? num(totalPower, 1) : '—'}
+                </span>
                 <span className="text-xs text-textMuted font-medium">W</span>
               </div>
-              {liveNodes === 0 && (
+              {!isConnected ? (
+                <span className="text-xs text-red-400 font-medium mt-1">Server unreachable — no current reading</span>
+              ) : liveNodes === 0 ? (
                 <span className="text-xs text-yellow-500 font-medium mt-1">No node reporting — stored reading</span>
-              )}
+              ) : null}
             </div>
             <div className="flex flex-col border-t md:border-t-0 md:border-l border-borderSubtle md:pl-6 pt-4 md:pt-0 justify-center">
               <span className="text-textMuted text-xs font-semibold uppercase tracking-wider mb-2">Consumption Summary</span>
@@ -267,24 +298,29 @@ function App() {
                 <div className="flex justify-between items-baseline">
                   <span className="text-[10px] text-textMuted font-bold uppercase tracking-wider">Daily:</span>
                   <div>
-                    <span className="text-2xl font-bold font-mono text-textMain mr-1">{dailyConsumption.toFixed(3)}</span>
+                    <span className="text-2xl font-bold font-mono text-textMain mr-1">{isConnected ? dailyConsumption.toFixed(3) : '—'}</span>
                     <span className="text-[10px] text-textMuted font-medium">kWh</span>
                   </div>
                 </div>
                 <div className="flex justify-between items-baseline border-t border-borderSubtle/30 pt-1">
                   <span className="text-[10px] text-textMuted font-bold uppercase tracking-wider">Weekly:</span>
                   <div>
-                    <span className="text-lg font-bold font-mono text-textMain mr-1">{weeklyConsumption.toFixed(3)}</span>
+                    <span className="text-lg font-bold font-mono text-textMain mr-1">{isConnected ? weeklyConsumption.toFixed(3) : '—'}</span>
                     <span className="text-[10px] text-textMuted font-medium">kWh</span>
                   </div>
                 </div>
                 <div className="flex justify-between items-baseline border-t border-borderSubtle/30 pt-1">
                   <span className="text-[10px] text-textMuted font-bold uppercase tracking-wider">Monthly:</span>
                   <div>
-                    <span className="text-lg font-bold font-mono text-textMain mr-1">{monthlyConsumption.toFixed(3)}</span>
+                    <span className="text-lg font-bold font-mono text-textMain mr-1">{isConnected ? monthlyConsumption.toFixed(3) : '—'}</span>
                     <span className="text-[10px] text-textMuted font-medium">kWh</span>
                   </div>
                 </div>
+                {!isConnected && (
+                  <p className="text-[10px] text-red-400 font-medium border-t border-borderSubtle/30 pt-1">
+                    Server unreachable — totals unavailable
+                  </p>
+                )}
               </div>
             </div>
           </section>
@@ -338,6 +374,11 @@ function App() {
 
       {/* Sliding Logs Drawer Panel */}
       <div 
+        role="dialog"
+        aria-modal="true"
+        aria-label="System Log Console"
+        aria-hidden={!isDrawerOpen}
+        inert={!isDrawerOpen}
         className={`fixed right-0 top-0 h-full w-full sm:w-[500px] bg-slate-900 border-l border-white/10 shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-in-out transform ${
           isDrawerOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
@@ -396,18 +437,30 @@ function App() {
               </>
             )}
           </button>
+
+          {clearError && (
+            <p role="alert" className="text-xs font-mono text-red-400">{clearError}</p>
+          )}
         </div>
 
         {/* Logs Feed Container */}
         <div className="flex-1 overflow-y-auto p-6 space-y-3 bg-slate-950/20">
           <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Live Telemetry Log Feed</h3>
-          {logs.length === 0 ? (
+          {logsError ? (
+            <div role="alert" className="text-center py-16 text-red-400 font-mono text-xs">
+              {logsError}
+            </div>
+          ) : logs.length === 0 ? (
             <div className="text-center py-16 text-slate-500 font-mono text-xs animate-pulse">
               NO TELEMETRY LOGS IN DATABASE
             </div>
           ) : (
             logs.map(log => {
-              const time = log.timestamp ? log.timestamp.substring(11, 19) : '00:00:00';
+              // The API sends UTC while the footer renders local time. Slicing the
+              // raw string showed UTC beside a local clock and read as a skew.
+              const seenMs = parseUtc(log.timestamp);
+              const time = seenMs === null ? '--:--:--' : new Date(seenMs).toLocaleTimeString([], { hour12: false });
+              const nodeName = plugNames.get(log.plug_id) || `Node ${log.plug_id}`;
               
               // Color mapping for device classes
               let badgeColor = "bg-slate-500/15 text-slate-400 border border-slate-500/20";
@@ -422,7 +475,7 @@ function App() {
               return (
                 <div key={log.id} className="p-3.5 bg-slate-900/80 border border-white/5 rounded-xl hover:border-white/10 hover:bg-slate-900 transition-all flex flex-col space-y-2.5 shadow-sm">
                   <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono">
-                    <span className="font-semibold text-slate-500">[{time}] Node {log.plug_id}</span>
+                    <span className="font-semibold text-slate-500">[{time}] {nodeName}</span>
                     <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wider uppercase font-sans ${badgeColor}`}>
                       {log.connectedDevice || "Idle"}
                     </span>

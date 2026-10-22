@@ -43,6 +43,11 @@ const VoltageCurrentChart = ({ data }) => {
       </div>
 
       <div className="h-48 w-full">
+        {data.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-textMuted font-mono text-xs tracking-wider">
+            NO SAMPLES YET — WAITING FOR FIRST READING
+          </div>
+        ) : (
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" vertical={true} horizontal={false} opacity={0.3} />
@@ -103,6 +108,7 @@ const VoltageCurrentChart = ({ data }) => {
             />
           </LineChart>
         </ResponsiveContainer>
+        )}
       </div>
     </div>
   );
