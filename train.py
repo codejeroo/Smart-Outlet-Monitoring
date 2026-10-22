@@ -246,47 +246,36 @@ def load_csv_data(file_path):
                 continue # skip bad parsed rows
     return dataset
 
-def generate_synthetic_other_devices(num_samples=200):
-    # Generates synthetic data representing various household appliances that are NOT phone chargers
-    # Features: [vrms, irms, realPower, powerFactor, 'other']
+def generate_synthetic_fan(num_samples=300):
+    # Physics-grounded synthetic fan class. The collected "fan" CSV turned out
+    # to be a 7-10W PF~0.9 load (functionally a phone charger), so a real fan
+    # has no live recordings; synthesise one from motor physics instead.
+    # The only fan observed in this household measures 8-15W (PF 0.62-0.72).
+    # Laptop bricks occupy 34-101W at PF 0.73-0.89 (mid-charge dips to ~34W),
+    # and the two feature sets overlap everywhere above ~25W — so the fan
+    # band is capped at 25W and PF 0.75 to stop it claiming the laptop's
+    # mid-charge region. A genuinely larger fan will need real recorded
+    # data to reclaim its region.
     synthetic = []
-    
-    # We will simulate three popular appliance profiles:
-    # 1. Medium Resistive loads (e.g. Incandescent/LED lamps, iron): high power factor, medium power
-    # 2. Inductive/capacitive loads (e.g. Desk Fan, small air purifier, motor): lower power factor, medium power
-    # 3. High power appliances (e.g. electric kettle, heater, coffee maker): high power factor, very high power
-    # 4. Laptop charger: medium power (45W-90W), high power factor (0.85-0.95 due to active PFC)
-    
     for _ in range(num_samples):
-        profile = random.choice(['lamp', 'fan', 'heater', 'laptop'])
         vrms = round(random.uniform(215.0, 235.0), 1)
-        
-        if profile == 'lamp':
-            # 25W to 120W, highly resistive (PF near 1.0)
-            real_power = round(random.uniform(25.0, 120.0), 1)
-            pf = round(random.uniform(0.95, 1.00), 2)
-            irms = round(real_power / (vrms * pf), 2)
-            
-        elif profile == 'fan':
-            # 30W to 150W, inductive motor (PF around 0.65-0.85)
-            real_power = round(random.uniform(30.0, 150.0), 1)
-            pf = round(random.uniform(0.65, 0.85), 2)
-            irms = round(real_power / (vrms * pf), 2)
-            
-        elif profile == 'heater':
-            # 500W to 1800W, highly resistive (PF near 1.0)
-            real_power = round(random.uniform(500.0, 1800.0), 1)
-            pf = round(random.uniform(0.98, 1.00), 2)
-            irms = round(real_power / (vrms * pf), 2)
-            
-        elif profile == 'laptop':
-            # 45W to 95W, switching power supply with active PFC (PF around 0.85-0.95)
-            real_power = round(random.uniform(45.0, 95.0), 1)
-            pf = round(random.uniform(0.85, 0.95), 2)
-            irms = round(real_power / (vrms * pf), 2)
-            
-        synthetic.append([vrms, irms, real_power, pf, 'other'])
-        
+        real_power = round(random.uniform(8.0, 25.0), 1)
+        pf = round(random.uniform(0.62, 0.75), 2)
+        irms = round(real_power / (vrms * pf), 2)
+        synthetic.append([vrms, irms, real_power, pf, 'fan'])
+    return synthetic
+
+def generate_synthetic_idle_energized(num_samples=150):
+    # "Powered socket, nothing plugged in": mains voltage present, no load
+    # current. The collected CSVs never contained this state, which is why it
+    # used to read as 'fan'. Teach the model that it is Idle.
+    synthetic = []
+    for _ in range(num_samples):
+        vrms = round(random.uniform(215.0, 235.0), 1)
+        irms = round(random.uniform(0.0, 0.004), 3)
+        real_power = round(random.uniform(0.0, 0.1), 2)
+        pf = round(random.uniform(0.85, 1.00), 2)
+        synthetic.append([vrms, irms, real_power, pf, 'Idle'])
     return synthetic
 
 
@@ -323,13 +312,13 @@ def evaluate_model(rf, test_set, serialized_trees):
 def main():
     print("Starting Pure-Python Random Forest Data Preparation...")
     
-    # 1. Load data from all three cleaned files
+    # 1. Load data from the collected recordings
     files = {
         "phone": "phone_result.csv",
-        "fan": "Fan_result.csv",
+        "fan_csv": "Fan_result.csv",
         "laptop": "Laptop_result.csv"
     }
-    
+
     full_dataset = []
     for device, filename in files.items():
         if os.path.exists(filename):
@@ -337,25 +326,86 @@ def main():
             print(f"Loaded {len(device_data)} data points from {filename}")
             full_dataset.extend(device_data)
         else:
-            print(f"WARNING: File {filename} not found! Skipping...")
-            
+            print(f"WARNING: File {filename} not found! Skipping!")
+
     if not full_dataset:
         print("ERROR: No data loaded! Cannot train.")
         return
-    
-    # Augment phone class with synthetic samples to cover PF drift (0.50-0.75)
-    # Live ESP32 shows the phone PF can drift up to ~0.60 depending on voltage/charge state,
-    # but the training data only captured PF 0.44-0.51. Without this, PF=0.57 gets misclassified.
-    # Phone signature: low power (5-12W), low current (0.05-0.12A), mid PF (0.45-0.75)
+
+    # The Fan_result.csv live rows were physically a 7-10W PF~0.9 load (a
+    # phone-class charger), so they now carry the 'phone' label in the CSV
+    # itself. A real fan has no live recording; synthesise the class from
+    # motor physics so the model can distinguish it from laptop bricks
+    # (overlapping power, but PF 0.65-0.85 vs 0.85-0.95).
+    fan_synthetic = generate_synthetic_fan(300)
+    full_dataset.extend(fan_synthetic)
+    print(f"Synthesised {len(fan_synthetic)} physics-grounded 'fan' samples (30-150W, PF 0.65-0.85)")
+
+    # Powered-but-empty sockets (mains present, no current) have no live
+    # recording either; synthesise them as Idle so a live socket with nothing
+    # plugged in stops reading as 'fan'.
+    idle_energized = generate_synthetic_idle_energized(150)
+    full_dataset.extend(idle_energized)
+    print(f"Synthesised {len(idle_energized)} energized-idle samples (Vrms>0, no load)")
+
+    # Augment phone class with synthetic samples to cover PF drift. Collected
+    # phone data spans PF 0.40-0.51 (rectifier-capacitor chargers); extend to
+    # 0.60. Do NOT claim PF above 0.60 at any wattage: the PD fast-charger
+    # band (14-25W, PF 0.60-0.72) physically overlaps small fans and the two
+    # cannot be separated by these features — guessing there mislabels one
+    # side or the other. Users whose fast-charger genuinely reads PF>0.60
+    # should record a session and let real data own that region.
     phone_augmented = 0
-    for _ in range(80):
+    for _ in range(180):
         vrms = round(random.uniform(215.0, 230.0), 1)
-        irms = round(random.uniform(0.05, 0.12), 2)
-        real_power = round(random.uniform(5.0, 12.0), 1)
-        pf = round(random.uniform(0.45, 0.75), 2)
+        irms = round(random.uniform(0.05, 0.15), 2)
+        real_power = round(random.uniform(5.0, 25.0), 1)
+        pf = round(random.uniform(0.40, 0.60), 2)
         full_dataset.append([vrms, irms, real_power, pf, 'phone'])
         phone_augmented += 1
-    print(f"Augmented phone class with {phone_augmented} synthetic samples (PF 0.45-0.75)")
+    print(f"Augmented phone class with {phone_augmented} synthetic samples (5-25W, PF 0.40-0.60)")
+
+    # Augment laptop class with mid-charge samples (30-75W, PF 0.73-0.89).
+    # The collected session only captured heavy charge (77-101W); a laptop
+    # early in its charge cycle sits at 34-61W with PF 0.72-0.81, a region
+    # the collected data never saw and that used to fall to the fan band.
+    laptop_augmented = 0
+    for _ in range(100):
+        vrms = round(random.uniform(215.0, 230.0), 1)
+        real_power = round(random.uniform(30.0, 75.0), 1)
+        pf = round(random.uniform(0.73, 0.89), 2)
+        irms = round(real_power / (vrms * pf), 2)
+        full_dataset.append([vrms, irms, real_power, pf, 'laptop'])
+        laptop_augmented += 1
+    for _ in range(80):
+        vrms = round(random.uniform(215.0, 230.0), 1)
+        real_power = round(random.uniform(10.0, 25.0), 1)
+        pf = round(random.uniform(0.85, 0.97), 2)
+        irms = round(real_power / (vrms * pf), 2)
+        full_dataset.append([vrms, irms, real_power, pf, 'laptop'])
+        laptop_augmented += 1
+    print(f"Augmented laptop class with {laptop_augmented} synthetic samples (mid-charge 36-75W PF 0.73-0.89; trickle 10-25W PF 0.85-0.97)")
+
+    # Augment fan class near its low-power edge (8-25W) so small/low-speed
+    # fans have coverage instead of being claimed by the phone augmentation.
+    # Cap at 25W / PF 0.75: above that the region belongs to laptop bricks
+    # (mid-charge dips to ~34W at PF 0.73).
+    fan_augmented = 0
+    for _ in range(80):
+        vrms = round(random.uniform(215.0, 235.0), 1)
+        real_power = round(random.uniform(8.0, 14.0), 1)
+        pf = round(random.uniform(0.62, 0.72), 2)
+        irms = round(real_power / (vrms * pf), 2)
+        full_dataset.append([vrms, irms, real_power, pf, 'fan'])
+        fan_augmented += 1
+    for _ in range(80):
+        vrms = round(random.uniform(215.0, 235.0), 1)
+        real_power = round(random.uniform(14.0, 25.0), 1)
+        pf = round(random.uniform(0.62, 0.75), 2)
+        irms = round(real_power / (vrms * pf), 2)
+        full_dataset.append([vrms, irms, real_power, pf, 'fan'])
+        fan_augmented += 1
+    print(f"Augmented fan class with {fan_augmented} synthetic low-power samples (8-25W, PF 0.62-0.75)")
     
     random.shuffle(full_dataset)
     
