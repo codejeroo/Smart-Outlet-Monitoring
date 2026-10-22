@@ -5,6 +5,16 @@ import logo from './assets/logo.png';
 import PowerChart from './components/PowerChart';
 import VoltageCurrentChart from './components/VoltageCurrentChart';
 import { plugLiveness, num, parseUtc, LIVE_WINDOW_MS } from './lib/telemetry';
+import {
+  List,
+  Moon,
+  Sun,
+  Warning,
+  Clock,
+  Trash,
+  X,
+  Plugs,
+} from '@phosphor-icons/react';
 
 function App() {
   const [plugs, setPlugs] = useState([]);
@@ -22,7 +32,7 @@ function App() {
   const [pendingControl, setPendingControl] = useState({});
   const [controlErrors, setControlErrors] = useState({});
   const [now, setNow] = useState(() => Date.now());
-  
+
   // Drawer States
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [logs, setLogs] = useState([]);
@@ -53,10 +63,10 @@ function App() {
       setWeeklyConsumption(response.totalWeeklyConsumption || 0);
       setMonthlyConsumption(response.totalMonthlyConsumption || 0);
       setError(null);
-      
+
       const now = new Date();
       setLastUpdated(now.toLocaleTimeString([], { hour12: false }));
-      
+
       setDataHistory(prev => {
         const totalPower = response.plugs.reduce((sum, p) => sum + (Number.isFinite(p.realPower) ? p.realPower : 0), 0);
         // Average only over nodes that are actually reporting a voltage. An
@@ -185,8 +195,24 @@ function App() {
 
   if (loading && plugs.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background text-textMain transition-colors duration-300">
-        <div className="text-xl font-mono animate-pulse glow-text">CONNECTING TO SMART HOUSE SERVER...</div>
+      <div className="min-h-[100dvh] max-w-5xl mx-auto px-6 py-12 flex flex-col gap-10">
+        <div className="flex items-center gap-4">
+          <div className="shimmer w-14 h-14 rounded-xl" />
+          <div className="shimmer h-8 w-72 rounded-lg" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 border-y border-borderSubtle">
+          {[0, 1, 2].map(i => (
+            <div key={i} className={`py-6 ${i > 0 ? 'md:border-l md:pl-6 border-t md:border-t-0 border-borderSubtle' : ''}`}>
+              <div className="shimmer h-3 w-24 rounded mb-3" />
+              <div className="shimmer h-9 w-32 rounded" />
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className="shimmer h-44 rounded-2xl" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -200,63 +226,107 @@ function App() {
   // the two panels cannot be read against each other without memorising it.
   const plugNames = new Map(plugs.map(p => [p.id, p.name]));
 
-  return (
-    <div className="min-h-screen bg-background text-textMain font-sans p-6 md:p-12 transition-colors duration-300 relative overflow-x-hidden">
-      <div className="max-w-5xl mx-auto">
-        <header className="mb-12 flex justify-between items-start">
-          <div>
-            <div className="flex items-center mb-2">
-              <img src={logo} alt="Smart Outlet Logo" className="w-14 h-14 md:w-20 md:h-20 mr-4 object-contain rounded-xl" />
-              <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight font-mono">
-                Smart Outlet System
-              </h1>
+  const statBlocks = [
+    {
+      label: 'Total Nodes',
+      value: (
+        <div className="flex items-baseline gap-2">
+          <span className="text-4xl font-semibold font-mono tracking-tight">{totalNodes}</span>
+          <span
+            className="text-xs text-textMuted font-medium"
+            title={`Nodes that have sent telemetry in the last ${LIVE_WINDOW_MS / 1000} seconds`}
+          >
+            ({liveNodes} live)
+          </span>
+        </div>
+      ),
+    },
+    {
+      label: 'Real-Time Power',
+      value: (
+        <div className="flex items-baseline gap-2">
+          <span className={`text-4xl font-semibold font-mono tracking-tight ${isConnected && liveNodes > 0 ? 'text-accent' : 'text-textMuted'}`}>
+            {isConnected ? num(totalPower, 1) : '—'}
+          </span>
+          <span className="text-xs text-textMuted font-medium">W</span>
+        </div>
+      ),
+      note: !isConnected
+        ? <span className="text-xs text-red-400 font-medium">Server unreachable — no current reading</span>
+        : liveNodes === 0
+        ? <span className="text-xs text-yellow-500 font-medium">No node reporting — stored reading</span>
+        : null,
+    },
+    {
+      label: 'Consumption',
+      value: (
+        <div className="divide-y divide-borderSubtle/60">
+          {[
+            ['Daily', dailyConsumption, 'text-2xl'],
+            ['Weekly', weeklyConsumption, 'text-lg'],
+            ['Monthly', monthlyConsumption, 'text-lg'],
+          ].map(([label, value, size]) => (
+            <div key={label} className="flex justify-between items-baseline py-1.5">
+              <span className="text-[10px] text-textMuted font-semibold uppercase tracking-wider">{label}</span>
+              <span className="text-textMuted text-[10px] font-medium">
+                <span className={`${size} font-semibold font-mono text-textMain mr-1`}>
+                  {isConnected ? value.toFixed(3) : '—'}
+                </span>
+                kWh
+              </span>
             </div>
-            <p className="text-textMuted text-lg">Multi-Outlet Monitoring and Control Console</p>
+          ))}
+          {!isConnected && (
+            <p className="text-[10px] text-red-400 font-medium pt-1.5">Server unreachable — totals unavailable</p>
+          )}
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div className="min-h-[100dvh] transition-colors duration-300 relative overflow-x-hidden">
+      <div className="max-w-5xl mx-auto px-6 py-8 md:py-12">
+        <header className="reveal mb-10 flex justify-between items-start" style={{ '--index': 0 }}>
+          <div>
+            <div className="flex items-center gap-4 mb-2">
+              <img src={logo} alt="Smart Outlet Logo" className="w-12 h-12 md:w-14 md:h-14 object-contain rounded-xl" />
+              <div>
+                <h1 className="text-3xl md:text-4xl font-bold tracking-tighter leading-none">
+                  Smart Outlet System
+                </h1>
+                <p className="text-textMuted text-sm mt-1">Multi-Outlet Monitoring and Control Console</p>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center space-x-3 mt-2">
-            {/* Hamburger Button for System Logs */}
+          <div className="flex items-center gap-2 mt-1">
             <button
               onClick={() => setIsDrawerOpen(true)}
-              className="p-2.5 rounded-full bg-cardBg border border-borderSubtle hover:bg-cardActive hover:scale-105 active:scale-95 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent flex items-center justify-center text-textMain shadow-md"
+              className="p-2.5 rounded-full border border-borderSubtle hover:bg-cardActive active:scale-95 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent flex items-center justify-center text-textMain"
               aria-label="Open System Logs Drawer"
               title="View System Logs"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
+              <List size={20} weight="bold" />
             </button>
-            
-            {/* Dark Mode toggle */}
+
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-2.5 rounded-full bg-cardBg border border-borderSubtle hover:bg-cardActive hover:scale-105 active:scale-95 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent flex items-center justify-center shadow-md"
+              className="p-2.5 rounded-full border border-borderSubtle hover:bg-cardActive active:scale-95 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent flex items-center justify-center"
               aria-label="Toggle Dark Mode"
             >
-              {isDarkMode ? (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-              ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-slate-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                </svg>
-              )}
+              {isDarkMode ? <Sun size={20} weight="bold" className="text-yellow-400" /> : <Moon size={20} weight="bold" className="text-textMuted" />}
             </button>
           </div>
         </header>
 
         {error && (
-          <div role="alert" className="mb-6 p-4 rounded-lg bg-red-900/20 border border-red-500/30 text-red-400 font-mono text-sm flex flex-wrap items-center gap-x-3 gap-y-2">
-            <span className="mr-2 shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </span>
+          <div role="alert" className="reveal mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 font-mono text-sm flex flex-wrap items-center gap-x-3 gap-y-2" style={{ '--index': 1 }}>
+            <Warning size={18} className="shrink-0" />
             <span>{error}</span>
             <button
               type="button"
               onClick={fetchPlugs}
-              className="ml-auto px-3 py-1 rounded-md border border-red-500/40 hover:bg-red-500/15 text-red-300 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              className="ml-auto px-3 py-1 rounded-md border border-red-500/30 hover:bg-red-500/15 text-red-300 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/50 active:scale-[0.98]"
             >
               Retry
             </button>
@@ -264,99 +334,46 @@ function App() {
         )}
 
         <main>
-          {/* Main Summary Card */}
-          <section className="mb-8 p-6 rounded-2xl glass-card grid grid-cols-1 md:grid-cols-3 gap-6 shadow-lg">
-            <div className="flex flex-col justify-center">
-              <span className="text-textMuted text-xs font-semibold uppercase tracking-wider mb-2">Total Nodes</span>
-              <div className="flex items-baseline space-x-2">
-                <span className="text-4xl font-extrabold font-mono text-textMain">{totalNodes}</span>
-                <span
-                  className="text-xs text-textMuted font-medium"
-                  title={`Nodes that have sent telemetry in the last ${LIVE_WINDOW_MS / 1000} seconds`}
-                >
-                  ({liveNodes} live)
-                </span>
+          {/* Stats strip: grouped by 1px rules, no card containers. */}
+          <section className="reveal mb-10 border-y border-borderSubtle grid grid-cols-1 md:grid-cols-3" style={{ '--index': 2 }}>
+            {statBlocks.map((block, i) => (
+              <div key={block.label} className={`py-6 flex flex-col justify-center ${i > 0 ? 'md:border-l border-t md:border-t-0 border-borderSubtle md:pl-6' : ''}`}>
+                <span className="text-textMuted text-xs font-semibold uppercase tracking-wider mb-2">{block.label}</span>
+                {block.value}
+                {block.note}
               </div>
-            </div>
-            <div className="flex flex-col justify-center border-t md:border-t-0 md:border-l border-borderSubtle md:pl-6 pt-4 md:pt-0">
-              <span className="text-textMuted text-xs font-semibold uppercase tracking-wider mb-2">Total Real-Time Power</span>
-              <div className="flex items-baseline space-x-2">
-                <span className={`text-4xl font-extrabold font-mono ${isConnected && liveNodes > 0 ? 'text-accent glow-text' : 'text-textMuted'}`}>
-                  {isConnected ? num(totalPower, 1) : '—'}
-                </span>
-                <span className="text-xs text-textMuted font-medium">W</span>
-              </div>
-              {!isConnected ? (
-                <span className="text-xs text-red-400 font-medium mt-1">Server unreachable — no current reading</span>
-              ) : liveNodes === 0 ? (
-                <span className="text-xs text-yellow-500 font-medium mt-1">No node reporting — stored reading</span>
-              ) : null}
-            </div>
-            <div className="flex flex-col border-t md:border-t-0 md:border-l border-borderSubtle md:pl-6 pt-4 md:pt-0 justify-center">
-              <span className="text-textMuted text-xs font-semibold uppercase tracking-wider mb-2">Consumption Summary</span>
-              <div className="space-y-2 mt-1">
-                <div className="flex justify-between items-baseline">
-                  <span className="text-[10px] text-textMuted font-bold uppercase tracking-wider">Daily:</span>
-                  <div>
-                    <span className="text-2xl font-bold font-mono text-textMain mr-1">{isConnected ? dailyConsumption.toFixed(3) : '—'}</span>
-                    <span className="text-[10px] text-textMuted font-medium">kWh</span>
-                  </div>
-                </div>
-                <div className="flex justify-between items-baseline border-t border-borderSubtle/30 pt-1">
-                  <span className="text-[10px] text-textMuted font-bold uppercase tracking-wider">Weekly:</span>
-                  <div>
-                    <span className="text-lg font-bold font-mono text-textMain mr-1">{isConnected ? weeklyConsumption.toFixed(3) : '—'}</span>
-                    <span className="text-[10px] text-textMuted font-medium">kWh</span>
-                  </div>
-                </div>
-                <div className="flex justify-between items-baseline border-t border-borderSubtle/30 pt-1">
-                  <span className="text-[10px] text-textMuted font-bold uppercase tracking-wider">Monthly:</span>
-                  <div>
-                    <span className="text-lg font-bold font-mono text-textMain mr-1">{isConnected ? monthlyConsumption.toFixed(3) : '—'}</span>
-                    <span className="text-[10px] text-textMuted font-medium">kWh</span>
-                  </div>
-                </div>
-                {!isConnected && (
-                  <p className="text-[10px] text-red-400 font-medium border-t border-borderSubtle/30 pt-1">
-                    Server unreachable — totals unavailable
-                  </p>
-                )}
-              </div>
-            </div>
+            ))}
           </section>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-            {plugs.map(plug => (
-              <PlugCard
-                key={plug.id}
-                plug={plug}
-                onToggle={handleToggle}
-                pending={pendingControl[plug.id]}
-                error={controlErrors[plug.id]}
-              />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+            {plugs.map((plug, i) => (
+              <div key={plug.id} className="reveal" style={{ '--index': 3 + i }}>
+                <PlugCard
+                  plug={plug}
+                  onToggle={handleToggle}
+                  pending={pendingControl[plug.id]}
+                  error={controlErrors[plug.id]}
+                />
+              </div>
             ))}
           </div>
 
-          <div className="space-y-6">
-            <PowerChart data={dataHistory} />
-            <VoltageCurrentChart data={dataHistory} />
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+            <div className="reveal" style={{ '--index': 7 }}><PowerChart data={dataHistory} /></div>
+            <div className="reveal" style={{ '--index': 8 }}><VoltageCurrentChart data={dataHistory} /></div>
           </div>
         </main>
 
-        <footer className="mt-16 text-center border-t border-borderSubtle pt-8 text-textMuted text-sm font-mono flex flex-col md:flex-row justify-center items-center md:space-x-8 space-y-2 md:space-y-0">
+        <footer className="reveal mt-16 border-t border-borderSubtle pt-6 text-textMuted text-sm font-mono flex flex-col md:flex-row justify-start items-start md:items-center md:gap-6 gap-2" style={{ '--index': 9 }}>
           <p>Running via Local Area Network (LAN)</p>
-          <div className="hidden md:block w-px h-4 bg-borderSubtle"></div>
-          <p className="flex items-center space-x-2" role="status" aria-live="polite">
+          <p className="flex items-center gap-2" role="status" aria-live="polite">
             <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-accent animate-pulse' : 'bg-red-500'}`}></span>
             <span className={isConnected ? '' : 'text-red-400'}>
               Server: {isConnected ? 'Connected' : 'Disconnected'}
             </span>
           </p>
-          <div className="hidden md:block w-px h-4 bg-borderSubtle"></div>
-          <p className="flex items-center space-x-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+          <p className="flex items-center gap-2">
+            <Clock size={16} />
             <span>
               {isConnected ? 'Last Updated' : 'Last successful'}: {lastUpdated || 'never'}
             </span>
@@ -366,74 +383,65 @@ function App() {
 
       {/* Sliding Logs Drawer Backdrop */}
       {isDrawerOpen && (
-        <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 transition-opacity duration-300 cursor-pointer"
+        <div
+          className="fixed inset-0 bg-zinc-950/60 backdrop-blur-xs z-50 transition-opacity duration-300 cursor-pointer"
           onClick={() => setIsDrawerOpen(false)}
         />
       )}
 
       {/* Sliding Logs Drawer Panel */}
-      <div 
+      <div
         role="dialog"
         aria-modal="true"
         aria-label="System Log Console"
         aria-hidden={!isDrawerOpen}
         inert={!isDrawerOpen}
-        className={`fixed right-0 top-0 h-full w-full sm:w-[500px] bg-slate-900 border-l border-white/10 shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-in-out transform ${
+        className={`fixed right-0 top-0 h-full w-full sm:w-[500px] bg-cardBg border-l border-borderSubtle shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] transform ${
           isDrawerOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
         {/* Drawer Header */}
-        <div className="p-6 border-b border-white/10 flex justify-between items-center bg-slate-950">
-          <div className="flex items-center space-x-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-accent animate-pulse"></span>
-            <h2 className="text-xl font-bold font-mono text-white">System Log Console</h2>
+        <div className="p-6 border-b border-borderSubtle flex justify-between items-center">
+          <div className="flex items-center gap-2.5">
+            <Plugs size={22} weight="bold" className="text-accent" />
+            <h2 className="text-xl font-semibold tracking-tight">System Log Console</h2>
           </div>
-          <button 
+          <button
             onClick={() => setIsDrawerOpen(false)}
-            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer focus:outline-none"
+            className="p-1.5 rounded-md text-textMuted hover:text-textMain hover:bg-cardActive transition-colors cursor-pointer focus:outline-none"
             aria-label="Close Logs"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X size={22} />
           </button>
         </div>
 
         {/* Consumption Overview & Clear Action */}
-        <div className="p-6 border-b border-white/5 bg-slate-900/50 space-y-4">
-          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Accumulated Consumption</h3>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="p-3 bg-slate-950/40 rounded-xl border border-white/5 flex flex-col justify-center shadow-inner">
-              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Daily</span>
-              <span className="text-base font-bold font-mono text-white truncate mt-0.5">{dailyConsumption.toFixed(3)}</span>
-              <span className="text-[8px] text-slate-500 font-semibold uppercase">kWh</span>
-            </div>
-            <div className="p-3 bg-slate-950/40 rounded-xl border border-white/5 flex flex-col justify-center shadow-inner">
-              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Weekly</span>
-              <span className="text-base font-bold font-mono text-white truncate mt-0.5">{weeklyConsumption.toFixed(3)}</span>
-              <span className="text-[8px] text-slate-500 font-semibold uppercase">kWh</span>
-            </div>
-            <div className="p-3 bg-slate-950/40 rounded-xl border border-white/5 flex flex-col justify-center shadow-inner">
-              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Monthly</span>
-              <span className="text-base font-bold font-mono text-white truncate mt-0.5">{monthlyConsumption.toFixed(3)}</span>
-              <span className="text-[8px] text-slate-500 font-semibold uppercase">kWh</span>
-            </div>
+        <div className="p-6 border-b border-borderSubtle space-y-4">
+          <h3 className="text-[10px] font-bold text-textMuted uppercase tracking-widest">Accumulated Consumption</h3>
+          <div className="divide-y divide-borderSubtle">
+            {[
+              ['Daily', dailyConsumption],
+              ['Weekly', weeklyConsumption],
+              ['Monthly', monthlyConsumption],
+            ].map(([label, value]) => (
+              <div key={label} className="flex justify-between items-baseline py-2">
+                <span className="text-[10px] text-textMuted font-bold uppercase tracking-wider">{label}</span>
+                <span className="text-base font-semibold font-mono">{value.toFixed(3)} <span className="text-[10px] text-textMuted">kWh</span></span>
+              </div>
+            ))}
           </div>
-          
+
           <button
             onClick={handleClearLogs}
             disabled={clearing}
-            className="w-full py-2.5 px-4 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/30 text-red-400 font-bold font-mono text-xs tracking-wider uppercase transition-all duration-200 cursor-pointer disabled:opacity-50 flex items-center justify-center space-x-2 focus:outline-none focus:ring-1 focus:ring-red-500/50"
+            className="w-full py-2.5 px-4 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 font-semibold font-mono text-xs tracking-wider uppercase transition-all duration-200 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 focus:outline-none focus:ring-1 focus:ring-red-500/50 active:scale-[0.98]"
           >
             {clearing ? (
               <span>Resetting Console...</span>
             ) : (
               <>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-                <span>Clear Logs & Reset Stats</span>
+                <Trash size={16} />
+                <span>Clear Logs &amp; Reset Stats</span>
               </>
             )}
           </button>
@@ -444,63 +452,65 @@ function App() {
         </div>
 
         {/* Logs Feed Container */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-3 bg-slate-950/20">
-          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Live Telemetry Log Feed</h3>
+        <div className="flex-1 overflow-y-auto px-6 bg-cardActive/40">
+          <h3 className="text-[10px] font-bold text-textMuted uppercase tracking-widest pt-5 pb-3">Live Telemetry Log Feed</h3>
           {logsError ? (
             <div role="alert" className="text-center py-16 text-red-400 font-mono text-xs">
               {logsError}
             </div>
           ) : logs.length === 0 ? (
-            <div className="text-center py-16 text-slate-500 font-mono text-xs animate-pulse">
+            <div className="text-center py-16 text-textMuted font-mono text-xs">
               NO TELEMETRY LOGS IN DATABASE
             </div>
           ) : (
-            logs.map(log => {
-              // The API sends UTC while the footer renders local time. Slicing the
-              // raw string showed UTC beside a local clock and read as a skew.
-              const seenMs = parseUtc(log.timestamp);
-              const time = seenMs === null ? '--:--:--' : new Date(seenMs).toLocaleTimeString([], { hour12: false });
-              const nodeName = plugNames.get(log.plug_id) || `Node ${log.plug_id}`;
-              
-              // Color mapping for device classes
-              let badgeColor = "bg-slate-500/15 text-slate-400 border border-slate-500/20";
-              if (log.connectedDevice === 'Phone') {
-                badgeColor = "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20";
-              } else if (log.connectedDevice === 'Laptop') {
-                badgeColor = "bg-sky-500/15 text-sky-400 border border-sky-500/20";
-              } else if (log.connectedDevice === 'Fan') {
-                badgeColor = "bg-indigo-500/15 text-indigo-400 border border-indigo-500/20";
-              }
-              
-              return (
-                <div key={log.id} className="p-3.5 bg-slate-900/80 border border-white/5 rounded-xl hover:border-white/10 hover:bg-slate-900 transition-all flex flex-col space-y-2.5 shadow-sm">
-                  <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono">
-                    <span className="font-semibold text-slate-500">[{time}] {nodeName}</span>
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wider uppercase font-sans ${badgeColor}`}>
-                      {log.connectedDevice || "Idle"}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-1 text-[11px] font-mono text-slate-300">
-                    <div>
-                      <span className="text-slate-500 text-[8px] font-bold block uppercase tracking-wider">Vrms</span>
-                      <span className="font-semibold">{log.vrms?.toFixed(1)}V</span>
+            <ul className="divide-y divide-borderSubtle">
+              {logs.map(log => {
+                // The API sends UTC while the footer renders local time. Slicing the
+                // raw string showed UTC beside a local clock and read as a skew.
+                const seenMs = parseUtc(log.timestamp);
+                const time = seenMs === null ? '--:--:--' : new Date(seenMs).toLocaleTimeString([], { hour12: false });
+                const nodeName = plugNames.get(log.plug_id) || `Node ${log.plug_id}`;
+
+                // Color mapping for device classes
+                let badgeColor = "bg-textMuted/10 text-textMuted border-borderSubtle";
+                if (log.connectedDevice === 'Phone') {
+                  badgeColor = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+                } else if (log.connectedDevice === 'Laptop') {
+                  badgeColor = "bg-sky-500/10 text-sky-400 border-sky-500/20";
+                } else if (log.connectedDevice === 'Fan') {
+                  badgeColor = "bg-indigo-500/10 text-indigo-400 border-indigo-500/20";
+                }
+
+                return (
+                  <li key={log.id} className="py-3 flex flex-col gap-2">
+                    <div className="flex justify-between items-center text-[10px] text-textMuted font-mono">
+                      <span className="font-semibold text-textMuted">[{time}] {nodeName}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wider uppercase font-sans border ${badgeColor}`}>
+                        {log.connectedDevice || "Idle"}
+                      </span>
                     </div>
-                    <div>
-                      <span className="text-slate-500 text-[8px] font-bold block uppercase tracking-wider">Irms</span>
-                      <span className="font-semibold">{log.irms?.toFixed(2)}A</span>
+                    <div className="grid grid-cols-4 gap-1 text-[11px] font-mono text-textMain">
+                      <div>
+                        <span className="text-textMuted text-[8px] font-bold block uppercase tracking-wider">Vrms</span>
+                        <span className="font-medium">{log.vrms?.toFixed(1)}V</span>
+                      </div>
+                      <div>
+                        <span className="text-textMuted text-[8px] font-bold block uppercase tracking-wider">Irms</span>
+                        <span className="font-medium">{log.irms?.toFixed(2)}A</span>
+                      </div>
+                      <div>
+                        <span className="text-textMuted text-[8px] font-bold block uppercase tracking-wider">Power</span>
+                        <span className="text-accent font-semibold">{log.realPower?.toFixed(1)}W</span>
+                      </div>
+                      <div>
+                        <span className="text-textMuted text-[8px] font-bold block uppercase tracking-wider">PF</span>
+                        <span className="font-medium">{log.powerFactor?.toFixed(2)}</span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-slate-500 text-[8px] font-bold block uppercase tracking-wider">Power</span>
-                      <span className="text-accent font-bold">{log.realPower?.toFixed(1)}W</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 text-[8px] font-bold block uppercase tracking-wider">PF</span>
-                      <span className="font-semibold">{log.powerFactor?.toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
       </div>

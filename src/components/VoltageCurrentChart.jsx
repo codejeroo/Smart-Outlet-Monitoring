@@ -19,17 +19,17 @@ const VoltageCurrentChart = ({ data }) => {
   const currentTicks = [0, currentMax / 2, currentMax];
 
   return (
-    <div className="bg-cardBg rounded-2xl p-6 shadow-lg glass-card">
+    <div className="reveal bg-cardBg rounded-2xl border border-borderSubtle p-6">
       <div className="flex flex-wrap justify-between items-center gap-y-2 mb-6">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex items-center space-x-2">
-            <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
+            <div className="w-2.5 h-2.5 rounded-full bg-accent animate-pulse"></div>
             <h3 className="text-textMain font-semibold tracking-wider text-sm">VOLTAGE (VRMS) &amp; CURRENT (IRMS)</h3>
           </div>
 
           <div className="flex items-center gap-x-4 text-xs font-medium">
             <div className="flex items-center space-x-1">
-              <div className="w-4 h-0.5 bg-blue-400"></div>
+              <div className="w-4 h-0.5 bg-accent"></div>
               <span className="text-textMuted">Voltage (Vrms)</span>
             </div>
             <div className="flex items-center space-x-1">
@@ -61,7 +61,7 @@ const VoltageCurrentChart = ({ data }) => {
             />
             <YAxis 
               yAxisId="left"
-              stroke="#60a5fa" 
+              stroke="#34d399" 
               fontSize={11} 
               tickMargin={10}
               tickLine={false}
@@ -92,7 +92,7 @@ const VoltageCurrentChart = ({ data }) => {
               yAxisId="left"
               type="monotone" 
               dataKey="avgVrms" 
-              stroke="#60a5fa" 
+              stroke="#34d399" 
               strokeWidth={2}
               dot={false}
               isAnimationActive={false}

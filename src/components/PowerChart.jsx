@@ -13,10 +13,10 @@ const PowerChart = ({ data }) => {
   const ticks = [0, maxY / 2, maxY];
 
   return (
-    <div className="bg-cardBg rounded-2xl p-6 shadow-lg glass-card">
+    <div className="reveal bg-cardBg rounded-2xl border border-borderSubtle p-6">
       <div className="flex flex-wrap justify-between items-center gap-y-2 mb-6">
-        <div className="flex items-center space-x-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></div>
+        <div className="flex items-center gap-2">
+          <div className="w-2.5 h-2.5 rounded-full bg-accent animate-pulse"></div>
           <h3 className="text-textMain font-semibold tracking-wider text-sm">REAL-TIME POWER (W)</h3>
         </div>
 
@@ -33,8 +33,8 @@ const PowerChart = ({ data }) => {
           <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="colorPower" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#ef4444" stopOpacity={0.4}/>
-                <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                <stop offset="5%" stopColor="#34d399" stopOpacity={0.4}/>
+                <stop offset="95%" stopColor="#34d399" stopOpacity={0}/>
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" vertical={true} horizontal={false} opacity={0.3} />
@@ -59,7 +59,7 @@ const PowerChart = ({ data }) => {
             />
             <Tooltip 
               contentStyle={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-main)' }}
-              itemStyle={{ color: '#ef4444' }}
+              itemStyle={{ color: '#34d399' }}
               labelStyle={{ color: 'var(--text-muted)' }}
             />
             <ReferenceLine
@@ -72,7 +72,7 @@ const PowerChart = ({ data }) => {
             <Area 
               type="monotone" 
               dataKey="totalPower" 
-              stroke="#ef4444" 
+              stroke="#34d399" 
               strokeWidth={2}
               fillOpacity={1} 
               fill="url(#colorPower)" 
