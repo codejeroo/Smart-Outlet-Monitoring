@@ -4,11 +4,11 @@
 #include <WebServer.h> // Include WebServer library
 
 // --- WiFi Credentials ---
-const char* ssid = "Angelo";
-const char* password = "raprap123";
+const char* ssid = "MSI8219";
+const char* password = "tunaynaproject";
 
 // --- Server Endpoint ---
-const char* serverName = "http://172.20.10.6:8080/api/plugs/1/data";
+const char* serverName = "http://192.168.137.194:8080/api/plugs/1/data";
 
 #define RXD2 25
 #define TXD2 26
