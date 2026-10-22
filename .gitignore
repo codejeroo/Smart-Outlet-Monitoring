@@ -28,3 +28,6 @@ dist-ssr
 # Tooling artifacts
 .codegraph/
 .impeccable/
+
+# Local SQLite database (development fallback)
+*.db

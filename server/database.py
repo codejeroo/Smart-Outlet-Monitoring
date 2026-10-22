@@ -12,25 +12,36 @@ DB_HOST = os.getenv("MARIADB_HOST", "127.0.0.1")
 DB_PORT = os.getenv("MARIADB_PORT", "3306")
 DB_NAME = os.getenv("MARIADB_DB", "smartoutlet")
 
-SQLALCHEMY_DATABASE_URL = f"mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+# Use SQLite when no MySQL server is reachable (e.g. running on a laptop
+# instead of the Raspberry Pi). Force it with DATABASE_URL=sqlite:///...
+if os.getenv("DATABASE_URL"):
+    SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+else:
+    SQLALCHEMY_DATABASE_URL = f"mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-# Auto-create the database if it doesn't exist
-import mysql.connector
-try:
-    conn = mysql.connector.connect(
-        user=DB_USER,
-        password=DB_PASSWORD,
-        host=DB_HOST,
-        port=int(DB_PORT)
+if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL,
+        connect_args={"check_same_thread": False},
     )
-    cursor = conn.cursor()
-    cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{DB_NAME}`")
-    cursor.close()
-    conn.close()
-except Exception as e:
-    print(f"Warning: Could not automatically create database '{DB_NAME}': {e}")
+else:
+    # Auto-create the database if it doesn't exist (MySQL only)
+    import mysql.connector
+    try:
+        conn = mysql.connector.connect(
+            user=DB_USER,
+            password=DB_PASSWORD,
+            host=DB_HOST,
+            port=int(DB_PORT)
+        )
+        cursor = conn.cursor()
+        cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{DB_NAME}`")
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Warning: Could not automatically create database '{DB_NAME}': {e}")
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+    engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
